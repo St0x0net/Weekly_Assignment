@@ -1,90 +1,53 @@
 import java.util.*;
 
-class TokenBucket {
+class AutocompleteSystem {
 
-    int maxTokens;
-    int tokens;
-    long lastRefillTime;
-    int refillRate; // tokens per hour
+    // query -> frequency
+    private HashMap<String, Integer> queryFrequency = new HashMap<>();
 
-    public TokenBucket(int maxTokens, int refillRate) {
-        this.maxTokens = maxTokens;
-        this.tokens = maxTokens;
-        this.refillRate = refillRate;
-        this.lastRefillTime = System.currentTimeMillis();
+    // Add or update search query
+    public void updateFrequency(String query) {
+
+        int freq = queryFrequency.getOrDefault(query, 0) + 1;
+        queryFrequency.put(query, freq);
+
+        System.out.println(query + " → Frequency: " + freq);
     }
 
-    // Refill tokens based on elapsed time
-    private void refill() {
+    // Return top 10 suggestions for a prefix
+    public void search(String prefix) {
 
-        long now = System.currentTimeMillis();
-        long elapsed = now - lastRefillTime;
+        PriorityQueue<Map.Entry<String, Integer>> pq =
+                new PriorityQueue<>((a, b) -> a.getValue() - b.getValue());
 
-        long tokensToAdd = (elapsed * refillRate) / (3600 * 1000);
+        for (Map.Entry<String, Integer> entry : queryFrequency.entrySet()) {
 
-        if (tokensToAdd > 0) {
-            tokens = (int) Math.min(maxTokens, tokens + tokensToAdd);
-            lastRefillTime = now;
-        }
-    }
+            if (entry.getKey().startsWith(prefix)) {
 
-    // Check if request is allowed
-    public synchronized boolean allowRequest() {
+                pq.offer(entry);
 
-        refill();
-
-        if (tokens > 0) {
-            tokens--;
-            return true;
+                if (pq.size() > 10) {
+                    pq.poll();
+                }
+            }
         }
 
-        return false;
-    }
+        List<Map.Entry<String, Integer>> result = new ArrayList<>();
 
-    public int getRemainingTokens() {
-        refill();
-        return tokens;
-    }
-}
-
-class RateLimiter {
-
-    // clientId -> token bucket
-    private HashMap<String, TokenBucket> clients = new HashMap<>();
-
-    private int LIMIT = 1000;
-
-    // Check rate limit
-    public void checkRateLimit(String clientId) {
-
-        clients.putIfAbsent(clientId, new TokenBucket(LIMIT, LIMIT));
-
-        TokenBucket bucket = clients.get(clientId);
-
-        if (bucket.allowRequest()) {
-
-            System.out.println("Allowed (" + bucket.getRemainingTokens() + " requests remaining)");
-
-        } else {
-
-            System.out.println("Denied (0 requests remaining, try again later)");
-        }
-    }
-
-    // Display rate limit status
-    public void getRateLimitStatus(String clientId) {
-
-        if (!clients.containsKey(clientId)) {
-            System.out.println("Client not found.");
-            return;
+        while (!pq.isEmpty()) {
+            result.add(pq.poll());
         }
 
-        TokenBucket bucket = clients.get(clientId);
+        Collections.reverse(result);
 
-        int remaining = bucket.getRemainingTokens();
-        int used = LIMIT - remaining;
+        System.out.println("\nSuggestions for \"" + prefix + "\":");
 
-        System.out.println("Status → Used: " + used + ", Limit: " + LIMIT + ", Remaining: " + remaining);
+        int rank = 1;
+        for (Map.Entry<String, Integer> entry : result) {
+            System.out.println(rank + ". " + entry.getKey() +
+                    " (" + entry.getValue() + " searches)");
+            rank++;
+        }
     }
 }
 
@@ -92,14 +55,22 @@ public class weekly {
 
     public static void main(String[] args) {
 
-        RateLimiter limiter = new RateLimiter();
+        AutocompleteSystem system = new AutocompleteSystem();
 
-        String client = "abc123";
+        // Existing queries
+        system.updateFrequency("java tutorial");
+        system.updateFrequency("javascript");
+        system.updateFrequency("java download");
+        system.updateFrequency("java tutorial");
+        system.updateFrequency("java 21 features");
+        system.updateFrequency("java tutorial");
+        system.updateFrequency("java 21 features");
+        system.updateFrequency("java 21 features");
 
-        limiter.checkRateLimit(client);
-        limiter.checkRateLimit(client);
-        limiter.checkRateLimit(client);
+        // Search suggestions
+        system.search("jav");
 
-        limiter.getRateLimitStatus(client);
+        // Update trending query
+        system.updateFrequency("java 21 features");
     }
 }
