@@ -1,76 +1,119 @@
 import java.util.*;
 
-class AutocompleteSystem {
+class ParkingSpot {
 
-    // query -> frequency
-    private HashMap<String, Integer> queryFrequency = new HashMap<>();
+    String licensePlate;
+    long entryTime;
+    boolean occupied;
 
-    // Add or update search query
-    public void updateFrequency(String query) {
+    ParkingSpot() {
+        licensePlate = null;
+        occupied = false;
+    }
+}
 
-        int freq = queryFrequency.getOrDefault(query, 0) + 1;
-        queryFrequency.put(query, freq);
+class ParkingLot {
 
-        System.out.println(query + " → Frequency: " + freq);
+    private ParkingSpot[] table;
+    private int size;
+    private int occupiedSpots = 0;
+    private int totalProbes = 0;
+    private int totalParks = 0;
+
+    public ParkingLot(int capacity) {
+        size = capacity;
+        table = new ParkingSpot[size];
+
+        for (int i = 0; i < size; i++) {
+            table[i] = new ParkingSpot();
+        }
     }
 
-    // Return top 10 suggestions for a prefix
-    public void search(String prefix) {
+    // Hash function
+    private int hash(String plate) {
+        return Math.abs(plate.hashCode()) % size;
+    }
 
-        PriorityQueue<Map.Entry<String, Integer>> pq =
-                new PriorityQueue<>((a, b) -> a.getValue() - b.getValue());
+    // Park vehicle using linear probing
+    public void parkVehicle(String plate) {
 
-        for (Map.Entry<String, Integer> entry : queryFrequency.entrySet()) {
+        int index = hash(plate);
+        int probes = 0;
 
-            if (entry.getKey().startsWith(prefix)) {
+        while (table[index].occupied) {
+            index = (index + 1) % size;
+            probes++;
+        }
 
-                pq.offer(entry);
+        table[index].licensePlate = plate;
+        table[index].entryTime = System.currentTimeMillis();
+        table[index].occupied = true;
 
-                if (pq.size() > 10) {
-                    pq.poll();
-                }
+        occupiedSpots++;
+        totalProbes += probes;
+        totalParks++;
+
+        System.out.println("parkVehicle(\"" + plate + "\") → Assigned spot #" +
+                index + " (" + probes + " probes)");
+    }
+
+    // Exit vehicle
+    public void exitVehicle(String plate) {
+
+        int index = hash(plate);
+
+        while (table[index].occupied) {
+
+            if (plate.equals(table[index].licensePlate)) {
+
+                long exitTime = System.currentTimeMillis();
+                long durationMs = exitTime - table[index].entryTime;
+
+                double hours = durationMs / (1000.0 * 60 * 60);
+                double fee = hours * 5; // $5 per hour
+
+                table[index].occupied = false;
+                table[index].licensePlate = null;
+
+                occupiedSpots--;
+
+                System.out.printf("exitVehicle(\"%s\") → Spot #%d freed, Duration: %.2f hours, Fee: $%.2f\n",
+                        plate, index, hours, fee);
+                return;
             }
+
+            index = (index + 1) % size;
         }
 
-        List<Map.Entry<String, Integer>> result = new ArrayList<>();
+        System.out.println("Vehicle not found.");
+    }
 
-        while (!pq.isEmpty()) {
-            result.add(pq.poll());
-        }
+    // Statistics
+    public void getStatistics() {
 
-        Collections.reverse(result);
+        double occupancy = (occupiedSpots * 100.0) / size;
+        double avgProbes = totalParks == 0 ? 0 : (double) totalProbes / totalParks;
 
-        System.out.println("\nSuggestions for \"" + prefix + "\":");
-
-        int rank = 1;
-        for (Map.Entry<String, Integer> entry : result) {
-            System.out.println(rank + ". " + entry.getKey() +
-                    " (" + entry.getValue() + " searches)");
-            rank++;
-        }
+        System.out.printf("\nParking Statistics:\n");
+        System.out.printf("Occupancy: %.2f%%\n", occupancy);
+        System.out.printf("Average Probes: %.2f\n", avgProbes);
     }
 }
 
 public class weekly {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 
-        AutocompleteSystem system = new AutocompleteSystem();
+        ParkingLot lot = new ParkingLot(500);
 
-        // Existing queries
-        system.updateFrequency("java tutorial");
-        system.updateFrequency("javascript");
-        system.updateFrequency("java download");
-        system.updateFrequency("java tutorial");
-        system.updateFrequency("java 21 features");
-        system.updateFrequency("java tutorial");
-        system.updateFrequency("java 21 features");
-        system.updateFrequency("java 21 features");
+        lot.parkVehicle("ABC-1234");
+        lot.parkVehicle("ABC-1235");
+        lot.parkVehicle("XYZ-9999");
 
-        // Search suggestions
-        system.search("jav");
+        Thread.sleep(2000); // simulate parking time
 
-        // Update trending query
-        system.updateFrequency("java 21 features");
+        lot.exitVehicle("ABC-1234");
+
+        lot.getStatistics();
     }
 }
