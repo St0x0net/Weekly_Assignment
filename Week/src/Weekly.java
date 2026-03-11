@@ -1,75 +1,113 @@
-=import java.util.*;
+import java.util.*;
 
-class FlashSaleInventoryManager {
+// Entry class to store DNS information
+class DNSEntry {
+    String domain;
+    String ipAddress;
+    long expiryTime;
 
-    // HashMap to store product stock
-    private HashMap<String, Integer> stockMap = new HashMap<>();
-
-    // Waiting list for each product
-    private HashMap<String, Queue<Integer>> waitingList = new HashMap<>();
-
-    // Add product with stock
-    public void addProduct(String productId, int stock) {
-        stockMap.put(productId, stock);
-        waitingList.put(productId, new LinkedList<>());
+    DNSEntry(String domain, String ipAddress, int ttlSeconds) {
+        this.domain = domain;
+        this.ipAddress = ipAddress;
+        this.expiryTime = System.currentTimeMillis() + (ttlSeconds * 1000);
     }
 
-    // Check available stock
-    public int checkStock(String productId) {
-        return stockMap.getOrDefault(productId, 0);
+    boolean isExpired() {
+        return System.currentTimeMillis() > expiryTime;
+    }
+}
+
+// DNS Cache Manager
+class DNSCache {
+
+    private int maxSize;
+
+    // LinkedHashMap for LRU eviction
+    private LinkedHashMap<String, DNSEntry> cache;
+
+    private int hits = 0;
+    private int misses = 0;
+
+    public DNSCache(int maxSize) {
+        this.maxSize = maxSize;
+
+        cache = new LinkedHashMap<String, DNSEntry>(maxSize, 0.75f, true) {
+            protected boolean removeEldestEntry(Map.Entry<String, DNSEntry> eldest) {
+                return size() > DNSCache.this.maxSize;
+            }
+        };
     }
 
-    // Purchase item (thread-safe)
-    public synchronized String purchaseItem(String productId, int userId) {
+    // Resolve domain
+    public String resolve(String domain) {
 
-        int stock = stockMap.getOrDefault(productId, 0);
+        DNSEntry entry = cache.get(domain);
 
-        if (stock > 0) {
-            stockMap.put(productId, stock - 1);
-            return "Success, " + (stock - 1) + " units remaining";
+        if (entry != null) {
+            if (!entry.isExpired()) {
+                hits++;
+                System.out.println("Cache HIT → " + entry.ipAddress);
+                return entry.ipAddress;
+            } else {
+                System.out.println("Cache EXPIRED → querying upstream...");
+                cache.remove(domain);
+            }
         }
-        else {
-            Queue<Integer> queue = waitingList.get(productId);
-            queue.add(userId);
-            return "Added to waiting list, position #" + queue.size();
+
+        misses++;
+
+        // Simulate upstream DNS lookup
+        String ip = queryUpstreamDNS(domain);
+
+        cache.put(domain, new DNSEntry(domain, ip, 5)); // TTL = 5 seconds for demo
+
+        System.out.println("Cache MISS → Upstream returned: " + ip);
+
+        return ip;
+    }
+
+    // Simulated DNS server
+    private String queryUpstreamDNS(String domain) {
+        Random r = new Random();
+        return "172.217.14." + r.nextInt(255);
+    }
+
+    // Remove expired entries manually
+    public void cleanup() {
+        Iterator<Map.Entry<String, DNSEntry>> it = cache.entrySet().iterator();
+
+        while (it.hasNext()) {
+            Map.Entry<String, DNSEntry> entry = it.next();
+            if (entry.getValue().isExpired()) {
+                it.remove();
+            }
         }
     }
 
-    // Restock product and process waiting list
-    public synchronized void restock(String productId, int quantity) {
+    // Cache statistics
+    public void getCacheStats() {
+        int total = hits + misses;
+        double hitRate = total == 0 ? 0 : (hits * 100.0 / total);
 
-        int stock = stockMap.getOrDefault(productId, 0);
-        stockMap.put(productId, stock + quantity);
-
-        Queue<Integer> queue = waitingList.get(productId);
-
-        while (!queue.isEmpty() && stockMap.get(productId) > 0) {
-            int userId = queue.poll();
-            stockMap.put(productId, stockMap.get(productId) - 1);
-
-            System.out.println("Waiting user " + userId + " purchase confirmed.");
-        }
+        System.out.println("Cache Hits: " + hits);
+        System.out.println("Cache Misses: " + misses);
+        System.out.println("Hit Rate: " + hitRate + "%");
     }
 }
 
 public class weekly {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 
-        FlashSaleInventoryManager manager = new FlashSaleInventoryManager();
+        DNSCache dns = new DNSCache(5);
 
-        manager.addProduct("IPHONE15_256GB", 100);
+        dns.resolve("google.com");
+        dns.resolve("google.com");
 
-        System.out.println("Stock Available: " + manager.checkStock("IPHONE15_256GB"));
+        Thread.sleep(6000); // wait for TTL expiration
 
-        System.out.println(manager.purchaseItem("IPHONE15_256GB", 12345));
-        System.out.println(manager.purchaseItem("IPHONE15_256GB", 67890));
+        dns.resolve("google.com");
 
-        // Simulate stock selling out
-        for (int i = 0; i < 100; i++) {
-            manager.purchaseItem("IPHONE15_256GB", i);
-        }
-
-        System.out.println(manager.purchaseItem("IPHONE15_256GB", 99999));
+        dns.getCacheStats();
     }
 }
