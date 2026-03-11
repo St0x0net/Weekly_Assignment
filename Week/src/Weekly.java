@@ -1,68 +1,90 @@
 import java.util.*;
 
-class AnalyticsSystem {
+class TokenBucket {
 
-    // Page view counts
-    private HashMap<String, Integer> pageViews = new HashMap<>();
+    int maxTokens;
+    int tokens;
+    long lastRefillTime;
+    int refillRate; // tokens per hour
 
-    // Unique visitors per page
-    private HashMap<String, Set<String>> uniqueVisitors = new HashMap<>();
-
-    // Traffic source counts
-    private HashMap<String, Integer> trafficSources = new HashMap<>();
-
-    // Process incoming event
-    public void processEvent(String url, String userId, String source) {
-
-        // Count page views
-        pageViews.put(url, pageViews.getOrDefault(url, 0) + 1);
-
-        // Track unique visitors
-        uniqueVisitors.putIfAbsent(url, new HashSet<>());
-        uniqueVisitors.get(url).add(userId);
-
-        // Track traffic source
-        trafficSources.put(source, trafficSources.getOrDefault(source, 0) + 1);
+    public TokenBucket(int maxTokens, int refillRate) {
+        this.maxTokens = maxTokens;
+        this.tokens = maxTokens;
+        this.refillRate = refillRate;
+        this.lastRefillTime = System.currentTimeMillis();
     }
 
-    // Display dashboard
-    public void getDashboard() {
+    // Refill tokens based on elapsed time
+    private void refill() {
 
-        System.out.println("\nTop Pages:");
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRefillTime;
 
-        // Convert to list for sorting
-        List<Map.Entry<String, Integer>> list = new ArrayList<>(pageViews.entrySet());
+        long tokensToAdd = (elapsed * refillRate) / (3600 * 1000);
 
-        list.sort((a, b) -> b.getValue() - a.getValue());
+        if (tokensToAdd > 0) {
+            tokens = (int) Math.min(maxTokens, tokens + tokensToAdd);
+            lastRefillTime = now;
+        }
+    }
 
-        int count = 0;
+    // Check if request is allowed
+    public synchronized boolean allowRequest() {
 
-        for (Map.Entry<String, Integer> entry : list) {
+        refill();
 
-            if (count == 10) break;
-
-            String page = entry.getKey();
-            int views = entry.getValue();
-            int unique = uniqueVisitors.get(page).size();
-
-            System.out.println((count + 1) + ". " + page + " - " + views +
-                    " views (" + unique + " unique)");
-
-            count++;
+        if (tokens > 0) {
+            tokens--;
+            return true;
         }
 
-        System.out.println("\nTraffic Sources:");
+        return false;
+    }
 
-        int total = 0;
-        for (int v : trafficSources.values()) total += v;
+    public int getRemainingTokens() {
+        refill();
+        return tokens;
+    }
+}
 
-        for (String source : trafficSources.keySet()) {
+class RateLimiter {
 
-            int countSource = trafficSources.get(source);
-            double percent = (countSource * 100.0) / total;
+    // clientId -> token bucket
+    private HashMap<String, TokenBucket> clients = new HashMap<>();
 
-            System.out.printf("%s: %.2f%%\n", source, percent);
+    private int LIMIT = 1000;
+
+    // Check rate limit
+    public void checkRateLimit(String clientId) {
+
+        clients.putIfAbsent(clientId, new TokenBucket(LIMIT, LIMIT));
+
+        TokenBucket bucket = clients.get(clientId);
+
+        if (bucket.allowRequest()) {
+
+            System.out.println("Allowed (" + bucket.getRemainingTokens() + " requests remaining)");
+
+        } else {
+
+            System.out.println("Denied (0 requests remaining, try again later)");
         }
+    }
+
+    // Display rate limit status
+    public void getRateLimitStatus(String clientId) {
+
+        if (!clients.containsKey(clientId)) {
+            System.out.println("Client not found.");
+            return;
+        }
+
+        TokenBucket bucket = clients.get(clientId);
+
+        int remaining = bucket.getRemainingTokens();
+        int used = LIMIT - remaining;
+
+        System.out.println("Status → Used: " + used + ", Limit: " + LIMIT + ", Remaining: " + remaining);
     }
 }
 
@@ -70,16 +92,14 @@ public class weekly {
 
     public static void main(String[] args) {
 
-        AnalyticsSystem system = new AnalyticsSystem();
+        RateLimiter limiter = new RateLimiter();
 
-        // Simulated events
-        system.processEvent("/article/breaking-news", "user_123", "Google");
-        system.processEvent("/article/breaking-news", "user_456", "Facebook");
-        system.processEvent("/sports/championship", "user_789", "Direct");
-        system.processEvent("/sports/championship", "user_123", "Google");
-        system.processEvent("/article/breaking-news", "user_999", "Direct");
+        String client = "abc123";
 
-        // Display dashboard
-        system.getDashboard();
+        limiter.checkRateLimit(client);
+        limiter.checkRateLimit(client);
+        limiter.checkRateLimit(client);
+
+        limiter.getRateLimitStatus(client);
     }
 }
